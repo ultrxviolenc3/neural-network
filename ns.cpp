@@ -69,126 +69,156 @@ void split(std::vector<Point> &alldata, std::vector<Point> &traindata, std::vect
     validdata.assign(alldata.begin()+trainsize, alldata.end());
 	}
 class Neuralnetwork {
-    Norm params;
-    std::vector<int> layers;
-    std::vector<std::vector<std::vector<double>>> w;
-    std::vector<std::vector<double>> b;
-    std::vector<std::vector<double>> a;
-    std::vector<std::vector<double>> f;
-    std::vector<std::vector<double>> delta;
-    double lr;
-	public:
-	void set_norm(const Norm &p) {params=p;}
-    Neuralnetwork(const std::vector<int> &inner_size, double learning_rate) {
-        lr=learning_rate;
-		layers.reserve(inner_size.size()+2);
-        layers.push_back(2);
-        for(auto &h : inner_size)
-        layers.push_back(h);
-        layers.push_back(1);
-        weights();
-		}
-    void weights() {
-		int l=layers.size();
-        w.resize(l);
-        b.resize(l);
-        for(int k=1;k<l;k++) {
-            int prev=layers[k-1];
-            int curr=layers[k];
-            b[k].resize(curr);
-            for (int i=0;i<curr; i++) b[k][i] = 0.0;
-			w[k].resize(curr);
-			for (int i=0;i<curr;i++) {
-				w[k][i].resize(prev);
-				for (int j=0;j<prev;j++) {
-					w[k][i][j]=rand()/(double)RAND_MAX*2-1;
-					}
-				}
+	Norm params;
+	std::vector<int> layers;
+	std::vector<std::vector<std::vector<double>>> w;
+	std::vector<std::vector<double>> b;
+	std::vector<std::vector<double>> a;
+	std::vector<std::vector<double>> f;
+	std::vector<std::vector<double>> delta;
+	double lr;
+
+public:
+	void set_norm(const Norm &p);
+	Neuralnetwork(const std::vector<int> &inner_size, double learning_rate);
+	void weights();
+	double forward(double x, double y);
+	void tofile(const std::vector<Point> &data, std::ofstream &file);
+	void backward(int truelabel);
+	void train_epoch(std::vector<Point> &traindata);
+	void update();
+	int predict(Point &p);
+	double evaluate(const std::vector<Point> &data);
+};
+void Neuralnetwork::set_norm(const Norm &p) {
+	params = p;
+}
+
+Neuralnetwork::Neuralnetwork(const std::vector<int> &inner_size,
+							 double learning_rate) {
+	lr = learning_rate;
+	layers.reserve(inner_size.size() + 2);
+	layers.push_back(2);
+	for (auto &h : inner_size) {
+		layers.push_back(h);
+	}
+	layers.push_back(1);
+	weights();
+}
+
+void Neuralnetwork::weights() {
+	int l = layers.size();
+	w.resize(l);
+	b.resize(l);
+	for (int k = 1; k < l; k++) {
+		int prev = layers[k - 1];
+		int curr = layers[k];
+		b[k].resize(curr);
+		for (int i = 0; i < curr; i++) b[k][i] = 0.0;
+		w[k].resize(curr);
+		for (int i = 0; i < curr; i++) {
+			w[k][i].resize(prev);
+			for (int j = 0; j < prev; j++) {
+				w[k][i][j] = std::rand() / (double)RAND_MAX * 2 - 1;
 			}
 		}
-	double forward(double x, double y) {
-		normirovka(x, y, params);
-		int l = layers.size();
-		a.resize(l);
-		f.resize(l);
-		a[0].resize(2);
-		a[0][0] = x;
-		a[0][1] = y;
-		for(int k = 1; k < l; k++) {
-			int prevn = layers[k-1];
-			int currn = layers[k];
-			f[k].resize(currn);
-			a[k].resize(currn);
-			for(int i = 0; i < currn; i++) {
-				f[k][i] = b[k][i];
-				for(int j = 0; j < prevn; j++) f[k][i] += w[k][i][j] * a[k-1][j];
-				a[k][i] = Sigmoida(f[k][i]);
-				}
+	}
+}
+
+double Neuralnetwork::forward(double x, double y) {
+	normirovka(x, y, params);
+	int l = layers.size();
+	a.resize(l);
+	f.resize(l);
+	a[0].resize(2);
+	a[0][0] = x;
+	a[0][1] = y;
+	for (int k = 1; k < l; k++) {
+		int prevn = layers[k - 1];
+		int currn = layers[k];
+		f[k].resize(currn);
+		a[k].resize(currn);
+		for (int i = 0; i < currn; i++) {
+			f[k][i] = b[k][i];
+			for (int j = 0; j < prevn; j++) {
+				f[k][i] += w[k][i][j] * a[k - 1][j];
 			}
-		return a[l-1][0];
+			a[k][i] = Sigmoida(f[k][i]);
 		}
-	void tofile(const std::vector<Point> &data, std::ofstream &file) {
-		for(const auto &p : data) {
-			Point temp = p;
-			int pred=predict(temp);
-			file<<p.x<<" "<<p.y<<" "<<pred<< std::endl;
+	}
+	return a[l - 1][0];
+}
+
+void Neuralnetwork::tofile(const std::vector<Point> &data, std::ofstream &file) {
+	for (const auto &p : data) {
+		Point temp = p;
+		int pred = predict(temp);
+		file << p.x << " " << p.y << " " << pred << std::endl;
+	}
+}
+
+void Neuralnetwork::backward(int truelabel) {
+	int l = layers.size();
+	delta.resize(l);
+	delta[l - 1].resize(1);
+	double p = a[l - 1][0];
+	double dL_dp;
+	if (truelabel == 1) dL_dp = -1.0 / p;
+	else dL_dp = 1.0 / (1.0 - p);
+	delta[l - 1][0] = dL_dp * p * (1.0 - p);
+	for (int k = l - 2; k >= 1; k--) {
+		int currn = layers[k];
+		int nextn = layers[k + 1];
+		delta[k].resize(currn);
+		for (int i = 0; i < currn; i++) {
+			delta[k][i] = 0.0;
+			for (int j = 0; j < nextn; j++) {
+				delta[k][i] += w[k + 1][j][i] * delta[k + 1][j];
 			}
+			delta[k][i] *= Sigmoida2(f[k][i]);
 		}
-	void backward (int truelabel) {
-		int l=layers.size();
-		delta.resize(l);
-		delta[l-1].resize(1);
-		double p=a[l-1][0];
-		double dL_dp;
-		if(truelabel==1) dL_dp=-1.0/p;
-		else dL_dp = 1.0/(1.0-p);
-		delta[l-1][0]=dL_dp*p*(1.0-p);
-		for(int k=l-2;k>=1;k--) {
-			int currn=layers[k];
-			int nextn=layers[k+1];
-			delta[k].resize(currn);
-			for(int i=0;i<currn;i++) {
-				delta[k][i]=0.0;
-				for(int j=0;j<nextn;j++) delta[k][i]+=w[k+1][j][i]*delta[k+1][j];
-				delta[k][i]*=Sigmoida2(f[k][i]);
-				}
+	}
+}
+
+void Neuralnetwork::train_epoch(std::vector<Point> &traindata) {
+	std::random_device rd;
+	std::mt19937 g(rd());
+	std::shuffle(traindata.begin(), traindata.end(), g);
+	for (auto &p : traindata) {
+		forward(p.x, p.y);
+		backward(p.label);
+		update();
+	}
+}
+
+void Neuralnetwork::update() {
+	int l = layers.size();
+	for (int k = 1; k < l; k++) {
+		int prevn = layers[k - 1];
+		int currn = layers[k];
+		for (int i = 0; i < currn; i++) {
+			for (int j = 0; j < prevn; j++) {
+				w[k][i][j] -= lr * delta[k][i] * a[k - 1][j];
 			}
+			b[k][i] -= lr * delta[k][i];
 		}
-	void train_epoch(std::vector<Point> &traindata) {
-		std::random_device rd;
-		std::mt19937 g(rd());
-		shuffle(traindata.begin(), traindata.end(), g);
-		for(auto &p:traindata) {
-			forward(p.x, p.y);
-			backward(p.label);
-			update();
-			}
-		}
-	void update() {
-		int l=layers.size();
-		for(int k=1;k<l;k++) {
-			int prevn=layers[k-1];
-			int currn=layers[k];
-			for(int i=0;i<currn;i++) {
-				for(int j=0;j<prevn;j++) w[k][i][j]-=lr*delta[k][i]*a[k-1][j];
-				b[k][i]-=lr*delta[k][i];
-				}
-			}
-		}
-	int predict(Point &p){
-		 double prob=forward(p.x,p.y);
-		 return (prob>=0.5) ? 1 : 0;
-		 }
-	double evaluate(const std::vector<Point> &data) {
-		int count=0;
-		for(const auto &p:data) {
-			Point temp=p;
-			int pred=predict(temp);
-			if(pred==p.label) count++;
-			}
-		return (double)count/data.size();
-		}
-	};
+	}
+}
+
+int Neuralnetwork::predict(Point &p) {
+	double prob = forward(p.x, p.y);
+	return (prob >= 0.5) ? 1 : 0;
+}
+
+double Neuralnetwork::evaluate(const std::vector<Point> &data) {
+	int count = 0;
+	for (const auto &p : data) {
+		Point temp = p;
+		int pred = predict(temp);
+		if (pred == p.label) count++;
+	}
+	return (double)count / data.size();
+}
 
 void start(std::ofstream &f) {
 	    f<<"set xlabel \"x\""<< std::endl

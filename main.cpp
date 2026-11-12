@@ -2,6 +2,7 @@
 
 #include <fstream>
 #include <iostream>
+#include <regex>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -22,18 +23,27 @@ struct Settings {
     int hidden2 = 8;
 };
 
+std::string check_value(const opt::variables_map& vm, const std::string& name,
+                        const std::regex& pattern) {
+    std::string value = vm[name].as<std::string>();
+    if (!std::regex_match(value, pattern)) {
+        throw std::runtime_error("Неверное значение " + name + ": " + value);
+    }
+    return value;
+}
+
 bool read_options(int argc, char* argv[], Settings& settings) {
     opt::options_description desc("Параметры нейронной сети");
     desc.add_options()
         ("help,h", "Показать список параметров")
-        ("config,c", opt::value<std::string>(), "Путь к конфигурационному файлу (по умолчанию config.cfg)")
-        ("mode,m", opt::value<int>(), "1 - квадраты, 2 - круг, 3 - синусоида")
-        ("size,n", opt::value<int>(), "Количество точек")
+        ("config,c", opt::value<std::string>(), "Путь к конфигурационному файлу")
+        ("mode,m", opt::value<std::string>(), "1 - квадраты, 2 - круг, 3 - синусоида")
+        ("size,n", opt::value<std::string>(), "Количество точек")
         ("type,t", opt::value<std::string>(), "float или double")
-        ("lr", opt::value<double>(), "Скорость обучения, например 0.05")
-        ("epochs,e", opt::value<int>(), "Количество эпох")
-        ("hidden1", opt::value<int>(), "Нейронов в первом скрытом слое")
-        ("hidden2", opt::value<int>(), "Нейронов во втором скрытом слое");
+        ("lr", opt::value<std::string>(), "Скорость обучения, например 0.05")
+        ("epochs,e", opt::value<std::string>(), "Количество эпох")
+        ("hidden1", opt::value<std::string>(), "Нейронов в первом скрытом слое")
+        ("hidden2", opt::value<std::string>(), "Нейронов во втором скрытом слое");
 
     opt::variables_map vm;
     opt::store(opt::parse_command_line(argc, argv, desc), vm);
@@ -43,25 +53,38 @@ bool read_options(int argc, char* argv[], Settings& settings) {
         return false;
     }
 
-    const std::string config_path = vm.count("config") ? vm["config"].as<std::string>() : "config.cfg";
+    std::string config_path = vm.count("config")
+        ? vm["config"].as<std::string>() : "config.cfg";
     std::ifstream config_file(config_path);
     if (config_file) {
         opt::store(opt::parse_config_file(config_file, desc), vm);
     } else if (vm.count("config")) {
         throw std::runtime_error("Не удалось открыть конфиг: " + config_path);
     } else {
-        std::cout << "Файл config.cfg не найден.\n";
+        std::cout << "Файл config.cfg не найден, используются значения по умолчанию.\n";
     }
     opt::notify(vm);
 
-    if (vm.count("mode")) settings.mode = vm["mode"].as<int>();
-    if (vm.count("size")) settings.size = vm["size"].as<int>();
-    if (vm.count("type")) settings.type = vm["type"].as<std::string>();
-    if (vm.count("lr")) settings.lr = vm["lr"].as<double>();
-    if (vm.count("hidden1")) settings.hidden1 = vm["hidden1"].as<int>();
-    if (vm.count("hidden2")) settings.hidden2 = vm["hidden2"].as<int>();
+    const std::regex mode_re(R"([123])");
+    const std::regex size_re(R"([1-9]\d+)");
+    const std::regex integer_re(R"([1-9]\d*)");
+    const std::regex type_re(R"(float|double)");
+    const std::regex lr_re(R"((0\.\d*[1-9]\d*|[1-9]\d*(\.\d+)?))");
+
+    if (vm.count("mode"))
+        settings.mode = std::stoi(check_value(vm, "mode", mode_re));
+    if (vm.count("size"))
+        settings.size = std::stoi(check_value(vm, "size", size_re));
+    if (vm.count("type"))
+        settings.type = check_value(vm, "type", type_re);
+    if (vm.count("lr"))
+        settings.lr = std::stod(check_value(vm, "lr", lr_re));
+    if (vm.count("hidden1"))
+        settings.hidden1 = std::stoi(check_value(vm, "hidden1", integer_re));
+    if (vm.count("hidden2"))
+        settings.hidden2 = std::stoi(check_value(vm, "hidden2", integer_re));
     if (vm.count("epochs"))
-        settings.epochs = vm["epochs"].as<int>();
+        settings.epochs = std::stoi(check_value(vm, "epochs", integer_re));
     else if (settings.mode == 3)
         settings.epochs = 24;
     else
@@ -103,7 +126,7 @@ int run(const Settings& s) {
     std::ofstream result("pointnew.txt");
     std::ofstream plot("point.plt");
     if (!result || !plot) {
-        std::cerr << "Ошибка создания файлов\n";
+        std::cerr << "Ошибка создания файлов результата\n";
         return 1;
     }
     start(plot);
@@ -116,6 +139,8 @@ int main(int argc, char* argv[]) {
     try {
         if (!read_options(argc, argv, settings)) return 0;
     } catch (const std::exception& e) {
+        std::cerr << "Ошибка параметров: " << e.what() << '\n';
+        std::cerr << "Используйте --help для списка параметров.\n";
         return 1;
     }
 
